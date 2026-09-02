@@ -30,6 +30,20 @@ void main() {
     expect(find.text('Carlos Rodríguez'), findsOneWidget);
   });
 
+  testWidgets('muestra una acción visible para cargar documentos', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_testApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Clientes'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('María Gómez'));
+    await tester.pumpAndSettle();
+    expect(find.text('Gestión de documentos'), findsOneWidget);
+    expect(find.byKey(const Key('uploadDocumentButton')), findsOneWidget);
+    expect(find.text('Cargar documento'), findsOneWidget);
+  });
+
   test('serializa y recupera todos los datos de un cliente', () {
     final original = Client(
       'Ana Pérez',

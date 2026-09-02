@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -181,7 +182,10 @@ class _HomeShellState extends State<HomeShell> {
         ..clear()
         ..addAll(stored.map(Client.fromMap));
     }
-    if (widget.enableDocumentStorage) await _loadStoredDocuments();
+    if (widget.enableDocumentStorage) {
+      await _seedDemoDocumentsOnce();
+      await _loadStoredDocuments();
+    }
     await _saveClients();
     if (mounted) setState(() => loading = false);
   }
@@ -213,6 +217,43 @@ class _HomeShellState extends State<HomeShell> {
       if (client.files.isNotEmpty) client.docs = client.files.length;
     }
     if (mounted) setState(() {});
+  }
+
+  Future<void> _seedDemoDocumentsOnce() async {
+    final root = await getApplicationDocumentsDirectory();
+    final documentsRoot = Directory(
+      '${root.path}${Platform.pathSeparator}contaplazo_documents',
+    );
+    final marker = File(
+      '${documentsRoot.path}${Platform.pathSeparator}.demo_documents_seeded',
+    );
+    if (await marker.exists()) return;
+
+    const demoIds = {
+      '52.841.963',
+      '79.402.118',
+      '901.452.778-3',
+      '1.032.884.120',
+    };
+    final data = await rootBundle.load(
+      'output/pdf/documento_prueba_contaplazo.pdf',
+    );
+    final bytes = data.buffer.asUint8List(
+      data.offsetInBytes,
+      data.lengthInBytes,
+    );
+    for (final client in clients.where(
+      (client) => demoIds.contains(client.nit),
+    )) {
+      final directory = await clientDirectory(client);
+      await directory.create(recursive: true);
+      final sample = File(
+        '${directory.path}${Platform.pathSeparator}Documento_prueba_ContaPlazo.pdf',
+      );
+      if (!await sample.exists()) await sample.writeAsBytes(bytes, flush: true);
+    }
+    await documentsRoot.create(recursive: true);
+    await marker.writeAsString('seeded', flush: true);
   }
 
   Future<void> _saveClients() =>
@@ -1091,179 +1132,228 @@ class Status extends StatelessWidget {
   }
 }
 
-Future<void> details(BuildContext context, Client c, VoidCallback refresh) =>
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (context) => StatefulBuilder(
-        builder: (context, update) => Padding(
-          padding: const EdgeInsets.fromLTRB(22, 0, 22, 28),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+Future<void> details(
+  BuildContext context,
+  Client c,
+  VoidCallback refresh,
+) => showModalBottomSheet<void>(
+  context: context,
+  showDragHandle: true,
+  isScrollControlled: true,
+  builder: (context) => StatefulBuilder(
+    builder: (context, update) => Padding(
+      padding: const EdgeInsets.fromLTRB(22, 0, 22, 28),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              c.name,
+              style: Theme.of(context).textTheme.titleLarge
+                  ?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            Text(
+              'NIT/CC ${c.nit}',
+              style: const TextStyle(color: Colors.black54),
+            ),
+            const SizedBox(height: 12),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.event),
+              title: const Text('Fecha de presentación'),
+              subtitle: Text(date(c.due)),
+              trailing: const Icon(Icons.edit_calendar_outlined),
+              onTap: () async {
+                final selected = await showDatePicker(
+                  context: context,
+                  initialDate: c.due,
+                  firstDate: DateTime(2024),
+                  lastDate: DateTime(2035),
+                  helpText: 'Seleccionar vencimiento',
+                );
+                if (selected != null) {
+                  update(() => c.due = selected);
+                  refresh();
+                }
+              },
+            ),
+            Row(
               children: [
-                Text(
-                  c.name,
-                  style: Theme.of(context).textTheme.titleLarge
-                      ?.copyWith(fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  'NIT/CC ${c.nit}',
-                  style: const TextStyle(color: Colors.black54),
-                ),
-                const SizedBox(height: 12),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.event),
-                  title: const Text('Fecha de presentación'),
-                  subtitle: Text(date(c.due)),
-                  trailing: const Icon(Icons.edit_calendar_outlined),
-                  onTap: () async {
-                    final selected = await showDatePicker(
-                      context: context,
-                      initialDate: c.due,
-                      firstDate: DateTime(2024),
-                      lastDate: DateTime(2035),
-                      helpText: 'Seleccionar vencimiento',
-                    );
-                    if (selected != null) {
-                      update(() => c.due = selected);
-                      refresh();
-                    }
-                  },
-                ),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.folder_outlined),
-                  title: const Text('Documentos registrados'),
-                  subtitle: Text('${c.docs} archivos'),
-                  trailing: IconButton(
-                    tooltip: 'Agregar documento',
-                    onPressed: () async {
-                      final document = await pickAndStoreDocument(c);
-                      if (document != null) {
-                        update(() {
-                          c.files.add(document);
-                          c.docs = c.files.length;
-                        });
-                        refresh();
-                      }
-                    },
-                    icon: const Icon(Icons.add_circle_outline),
+                const Icon(Icons.folder_outlined, color: brand),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Gestión de documentos',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      Text('${c.files.length} archivos almacenados'),
+                    ],
                   ),
-                ),
-                if (c.files.isEmpty)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF1F6F4),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Text(
-                      'Agrega certificados, extractos, RUT, facturas o archivos PDF.',
-                      style: TextStyle(color: Colors.black54),
-                    ),
-                  ),
-                ...c.files.map(
-                  (document) => ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: CircleAvatar(
-                      backgroundColor: const Color(0xFFE7F2EE),
-                      child: Icon(documentIcon(document.name), color: brand),
-                    ),
-                    title: Text(
-                      document.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    subtitle: Text(fileSize(document.size)),
-                    onTap: () => OpenFilex.open(document.path),
-                    trailing: PopupMenuButton<String>(
-                      onSelected: (value) async {
-                        if (value == 'open') {
-                          await OpenFilex.open(document.path);
-                        } else if (value == 'delete') {
-                          final confirmed = await confirmDelete(
-                            context,
-                            document.name,
-                          );
-                          if (confirmed &&
-                              await deleteStoredDocument(document)) {
-                            update(() {
-                              c.files.remove(document);
-                              c.docs = c.files.length;
-                            });
-                            refresh();
-                          }
-                        }
-                      },
-                      itemBuilder: (_) => const [
-                        PopupMenuItem(value: 'open', child: Text('Abrir')),
-                        PopupMenuItem(value: 'delete', child: Text('Eliminar')),
-                      ],
-                    ),
-                  ),
-                ),
-                DropdownButtonFormField<TaxStatus>(
-                  initialValue: c.status,
-                  decoration: const InputDecoration(
-                    labelText: 'Estado de la declaración',
-                  ),
-                  items: const [
-                    DropdownMenuItem(
-                      value: TaxStatus.pending,
-                      child: Text('Pendiente'),
-                    ),
-                    DropdownMenuItem(
-                      value: TaxStatus.progress,
-                      child: Text('En proceso'),
-                    ),
-                    DropdownMenuItem(
-                      value: TaxStatus.filed,
-                      child: Text('Presentada'),
-                    ),
-                  ],
-                  onChanged: (v) {
-                    if (v != null) {
-                      update(() => c.status = v);
-                      refresh();
-                    }
-                  },
-                ),
-                const SizedBox(height: 8),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.request_quote_outlined),
-                  title: const Text('Honorarios del contador'),
-                  subtitle: Text(money(c.fee)),
-                  trailing: const Icon(Icons.edit_outlined),
-                  onTap: () async {
-                    final amount = await editFee(context, c.fee);
-                    if (amount != null) {
-                      update(() => c.fee = amount);
-                      refresh();
-                    }
-                  },
-                ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  value: c.paid,
-                  title: const Text('Servicio pagado'),
-                  subtitle: Text(money(c.fee)),
-                  onChanged: (v) {
-                    update(() => c.paid = v);
-                    refresh();
-                  },
                 ),
               ],
             ),
-          ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                key: const Key('uploadDocumentButton'),
+                onPressed: () async {
+                  try {
+                    final document = await pickAndStoreDocument(c);
+                    if (document == null) return;
+                    update(() {
+                      c.files.add(document);
+                      c.docs = c.files.length;
+                    });
+                    refresh();
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('${document.name} guardado')),
+                      );
+                    }
+                  } catch (error) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'No fue posible cargar el documento. Intenta nuevamente.',
+                          ),
+                        ),
+                      );
+                    }
+                  }
+                },
+                icon: const Icon(Icons.upload_file_outlined),
+                label: const Text('Cargar documento'),
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (c.files.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F6F4),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'Agrega certificados, extractos, RUT, facturas o archivos PDF.',
+                  style: TextStyle(color: Colors.black54),
+                ),
+              ),
+            ...c.files.map(
+              (document) => ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: CircleAvatar(
+                  backgroundColor: const Color(0xFFE7F2EE),
+                  child: Icon(documentIcon(document.name), color: brand),
+                ),
+                title: Text(
+                  document.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(fileSize(document.size)),
+                onTap: () => OpenFilex.open(document.path),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: 'Abrir documento',
+                      onPressed: () => OpenFilex.open(document.path),
+                      icon: const Icon(Icons.open_in_new_outlined),
+                    ),
+                    IconButton(
+                      key: ValueKey('delete-${document.path}'),
+                      tooltip: 'Eliminar documento',
+                      color: Colors.red.shade700,
+                      onPressed: () async {
+                        final confirmed = await confirmDelete(
+                          context,
+                          document.name,
+                        );
+                        if (confirmed && await deleteStoredDocument(document)) {
+                          update(() {
+                            c.files.remove(document);
+                            c.docs = c.files.length;
+                          });
+                          refresh();
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Documento eliminado'),
+                              ),
+                            );
+                          }
+                        }
+                      },
+                      icon: const Icon(Icons.delete_outline),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            DropdownButtonFormField<TaxStatus>(
+              initialValue: c.status,
+              decoration: const InputDecoration(
+                labelText: 'Estado de la declaración',
+              ),
+              items: const [
+                DropdownMenuItem(
+                  value: TaxStatus.pending,
+                  child: Text('Pendiente'),
+                ),
+                DropdownMenuItem(
+                  value: TaxStatus.progress,
+                  child: Text('En proceso'),
+                ),
+                DropdownMenuItem(
+                  value: TaxStatus.filed,
+                  child: Text('Presentada'),
+                ),
+              ],
+              onChanged: (v) {
+                if (v != null) {
+                  update(() => c.status = v);
+                  refresh();
+                }
+              },
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.request_quote_outlined),
+              title: const Text('Honorarios del contador'),
+              subtitle: Text(money(c.fee)),
+              trailing: const Icon(Icons.edit_outlined),
+              onTap: () async {
+                final amount = await editFee(context, c.fee);
+                if (amount != null) {
+                  update(() => c.fee = amount);
+                  refresh();
+                }
+              },
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: c.paid,
+              title: const Text('Servicio pagado'),
+              subtitle: Text(money(c.fee)),
+              onChanged: (v) {
+                update(() => c.paid = v);
+                refresh();
+              },
+            ),
+          ],
         ),
       ),
-    );
+    ),
+  ),
+);
 
 Future<double?> editFee(BuildContext context, double current) async {
   final controller = TextEditingController(

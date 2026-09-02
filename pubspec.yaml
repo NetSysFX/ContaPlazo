@@ -63,6 +63,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/branding/contaplazo_icon.png
+    - output/pdf/documento_prueba_contaplazo.pdf
 
 flutter_launcher_icons:
   android: true
