@@ -50,4 +50,5 @@ app.*.map.json
 # Material académico y archivos de generación local
 /qa_contaplazo/
 /build_contaplazo_doc.py
+/Documentacion_Proyecto_ContaPlazo.docx
 /Taller DAM1_*.pdf
