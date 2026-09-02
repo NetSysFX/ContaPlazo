@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
+
+import 'data/local_database.dart';
 
 void main() => runApp(const ContaPlazoApp());
 
@@ -51,6 +54,26 @@ class Client {
   int docs;
   TaxStatus status;
   final List<StoredDocument> files = [];
+
+  Map<String, Object?> toMap() => {
+    'nit': nit,
+    'name': name,
+    'due_date': due.toIso8601String(),
+    'fee': fee,
+    'paid': paid ? 1 : 0,
+    'document_count': docs,
+    'tax_status': status.index,
+  };
+
+  factory Client.fromMap(Map<String, Object?> map) => Client(
+    map['name']! as String,
+    map['nit']! as String,
+    DateTime.parse(map['due_date']! as String),
+    (map['fee']! as num).toDouble(),
+    map['paid'] == 1,
+    map['document_count']! as int,
+    TaxStatus.values[map['tax_status']! as int],
+  );
 }
 
 class StoredDocument {
@@ -60,14 +83,45 @@ class StoredDocument {
   final DateTime modified;
 }
 
+class AccountantProfile {
+  AccountantProfile({
+    this.name = '',
+    this.professionalId = '',
+    this.phone = '',
+    this.email = '',
+    this.firm = '',
+  });
+  String name, professionalId, phone, email, firm;
+  Map<String, Object?> toMap() => {
+    'name': name,
+    'professional_id': professionalId,
+    'phone': phone,
+    'email': email,
+    'firm': firm,
+  };
+  factory AccountantProfile.fromMap(Map<String, Object?> map) =>
+      AccountantProfile(
+        name: map['name']! as String,
+        professionalId: map['professional_id']! as String,
+        phone: map['phone']! as String,
+        email: map['email']! as String,
+        firm: map['firm']! as String,
+      );
+}
+
 class HomeShell extends StatefulWidget {
-  const HomeShell({super.key});
+  const HomeShell({super.key, this.store, this.enableDocumentStorage = true});
+  final ClientStore? store;
+  final bool enableDocumentStorage;
   @override
   State<HomeShell> createState() => _HomeShellState();
 }
 
 class _HomeShellState extends State<HomeShell> {
   int index = 0;
+  bool loading = true;
+  late final ClientStore store;
+  AccountantProfile accountant = AccountantProfile();
   final clients = <Client>[
     Client(
       'María Gómez',
@@ -110,7 +164,26 @@ class _HomeShellState extends State<HomeShell> {
   @override
   void initState() {
     super.initState();
-    _loadStoredDocuments();
+    store = widget.store ?? LocalDatabase.instance;
+    _initializePersistence();
+  }
+
+  Future<void> _initializePersistence() async {
+    final storedAccountant = await store.loadAccountant();
+    if (storedAccountant != null) {
+      accountant = AccountantProfile.fromMap(storedAccountant);
+    }
+    final stored = await store.loadClients();
+    if (stored.isEmpty) {
+      await _saveClients();
+    } else {
+      clients
+        ..clear()
+        ..addAll(stored.map(Client.fromMap));
+    }
+    if (widget.enableDocumentStorage) await _loadStoredDocuments();
+    await _saveClients();
+    if (mounted) setState(() => loading = false);
   }
 
   Future<void> _loadStoredDocuments() async {
@@ -139,6 +212,15 @@ class _HomeShellState extends State<HomeShell> {
         );
       if (client.files.isNotEmpty) client.docs = client.files.length;
     }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _saveClients() =>
+      store.saveClients(clients.map((client) => client.toMap()).toList());
+
+  Future<void> _saveAccountant(AccountantProfile profile) async {
+    accountant = profile;
+    await store.saveAccountant(profile.toMap());
     if (mounted) setState(() {});
   }
 
@@ -191,16 +273,17 @@ class _HomeShellState extends State<HomeShell> {
           ),
         ),
       );
+      await _saveClients();
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final pages = [
-      Dashboard(clients, refresh),
+      Dashboard(clients, refresh, accountant),
       Clients(clients, refresh),
       Payments(clients, refresh),
-      const Settings(),
+      Settings(accountant, _saveAccountant),
     ];
     return Scaffold(
       appBar: AppBar(
@@ -220,7 +303,11 @@ class _HomeShellState extends State<HomeShell> {
           ),
         ],
       ),
-      body: SafeArea(child: pages[index]),
+      body: SafeArea(
+        child: loading
+            ? const Center(child: CircularProgressIndicator())
+            : pages[index],
+      ),
       floatingActionButton: index == 1
           ? FloatingActionButton.extended(
               onPressed: addClient,
@@ -257,13 +344,17 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 
-  void refresh() => setState(() {});
+  void refresh() {
+    setState(() {});
+    unawaited(_saveClients());
+  }
 }
 
 class Dashboard extends StatelessWidget {
-  const Dashboard(this.clients, this.refresh, {super.key});
+  const Dashboard(this.clients, this.refresh, this.accountant, {super.key});
   final List<Client> clients;
   final VoidCallback refresh;
+  final AccountantProfile accountant;
   @override
   Widget build(BuildContext context) {
     final pending = clients.where((c) => c.status != TaxStatus.filed).length;
@@ -275,7 +366,9 @@ class Dashboard extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       children: [
         Text(
-          'Buenos días, contador',
+          accountant.name.isEmpty
+              ? 'Buenos días, contador'
+              : 'Buenos días, ${accountant.name}',
           style: Theme.of(context).textTheme.headlineSmall
               ?.copyWith(fontWeight: FontWeight.bold),
         ),
@@ -302,6 +395,8 @@ class Dashboard extends StatelessWidget {
             ),
           ],
         ),
+        const SizedBox(height: 18),
+        DashboardCharts(clients: clients),
         const SizedBox(height: 24),
         Text(
           'Próximos vencimientos',
@@ -320,6 +415,155 @@ class Dashboard extends StatelessWidget {
       ],
     );
   }
+}
+
+class DashboardCharts extends StatelessWidget {
+  const DashboardCharts({super.key, required this.clients});
+  final List<Client> clients;
+  @override
+  Widget build(BuildContext context) {
+    final total = clients.isEmpty ? 1 : clients.length;
+    final filed = clients.where((c) => c.status == TaxStatus.filed).length;
+    final progress = clients
+        .where((c) => c.status == TaxStatus.progress)
+        .length;
+    final pending = clients.where((c) => c.status == TaxStatus.pending).length;
+    final paid = clients
+        .where((c) => c.paid)
+        .fold<double>(0, (s, c) => s + c.fee);
+    final billed = clients.fold<double>(0, (s, c) => s + c.fee);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Resumen visual',
+              style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                SizedBox(
+                  width: 92,
+                  height: 92,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      CircularProgressIndicator(
+                        value: filed / total,
+                        strokeWidth: 11,
+                        backgroundColor: const Color(0xFFE6ECE9),
+                        color: Colors.green,
+                      ),
+                      Text(
+                        '${(filed / total * 100).round()}%',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 20,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 22),
+                Expanded(
+                  child: Column(
+                    children: [
+                      ChartBar(
+                        label: 'Presentadas',
+                        value: filed / total,
+                        count: filed,
+                        color: Colors.green,
+                      ),
+                      ChartBar(
+                        label: 'En proceso',
+                        value: progress / total,
+                        count: progress,
+                        color: Colors.blue,
+                      ),
+                      ChartBar(
+                        label: 'Pendientes',
+                        value: pending / total,
+                        count: pending,
+                        color: Colors.orange,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 30),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Recaudo de honorarios'),
+                Text(
+                  '${billed == 0 ? 0 : (paid / billed * 100).round()}%',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: brand,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            LinearProgressIndicator(
+              value: billed == 0 ? 0 : paid / billed,
+              minHeight: 10,
+              borderRadius: BorderRadius.circular(10),
+              backgroundColor: const Color(0xFFE6ECE9),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class ChartBar extends StatelessWidget {
+  const ChartBar({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.count,
+    required this.color,
+  });
+  final String label;
+  final double value;
+  final int count;
+  final Color color;
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 9),
+    child: Row(
+      children: [
+        SizedBox(
+          width: 76,
+          child: Text(label, style: const TextStyle(fontSize: 12)),
+        ),
+        Expanded(
+          child: LinearProgressIndicator(
+            value: value,
+            minHeight: 8,
+            borderRadius: BorderRadius.circular(8),
+            backgroundColor: const Color(0xFFE6ECE9),
+            color: color,
+          ),
+        ),
+        SizedBox(
+          width: 28,
+          child: Text(
+            '$count',
+            textAlign: TextAlign.end,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class Metric extends StatelessWidget {
@@ -511,7 +755,9 @@ class Payments extends StatelessWidget {
 }
 
 class Settings extends StatelessWidget {
-  const Settings({super.key});
+  const Settings(this.profile, this.onSave, {super.key});
+  final AccountantProfile profile;
+  final Future<void> Function(AccountantProfile) onSave;
   @override
   Widget build(BuildContext context) => ListView(
     padding: const EdgeInsets.all(18),
@@ -522,16 +768,26 @@ class Settings extends StatelessWidget {
             ?.copyWith(fontWeight: FontWeight.bold),
       ),
       const SizedBox(height: 16),
-      const Card(
+      Card(
         child: Column(
           children: [
             ListTile(
-              leading: Icon(Icons.person_outline),
-              title: Text('Perfil profesional'),
-              subtitle: Text('Datos del contador y firma'),
+              leading: const CircleAvatar(child: Icon(Icons.person_outline)),
+              title: Text(
+                profile.name.isEmpty
+                    ? 'Completar perfil profesional'
+                    : profile.name,
+              ),
+              subtitle: Text(
+                profile.professionalId.isEmpty
+                    ? 'Datos del contador y firma'
+                    : '${profile.professionalId}${profile.firm.isEmpty ? '' : ' · ${profile.firm}'}',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => editAccountantProfile(context, profile, onSave),
             ),
-            Divider(height: 1),
-            ListTile(
+            const Divider(height: 1),
+            const ListTile(
               leading: Icon(Icons.notifications_outlined),
               title: Text('Recordatorios'),
               subtitle: Text('Avisar 15, 7 y 2 días antes'),
@@ -553,6 +809,81 @@ class Settings extends StatelessWidget {
       ),
     ],
   );
+}
+
+Future<void> editAccountantProfile(
+  BuildContext context,
+  AccountantProfile current,
+  Future<void> Function(AccountantProfile) onSave,
+) async {
+  final name = TextEditingController(text: current.name);
+  final professionalId = TextEditingController(text: current.professionalId);
+  final phone = TextEditingController(text: current.phone);
+  final email = TextEditingController(text: current.email);
+  final firm = TextEditingController(text: current.firm);
+  final saved = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Perfil profesional'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: name,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Nombre completo *'),
+            ),
+            TextField(
+              controller: professionalId,
+              decoration: const InputDecoration(
+                labelText: 'Tarjeta profesional o identificación',
+              ),
+            ),
+            TextField(
+              controller: phone,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(labelText: 'Teléfono'),
+            ),
+            TextField(
+              controller: email,
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(
+                labelText: 'Correo electrónico',
+              ),
+            ),
+            TextField(
+              controller: firm,
+              decoration: const InputDecoration(
+                labelText: 'Firma o despacho contable',
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Guardar'),
+        ),
+      ],
+    ),
+  );
+  if (saved == true && name.text.trim().isNotEmpty) {
+    await onSave(
+      AccountantProfile(
+        name: name.text.trim(),
+        professionalId: professionalId.text.trim(),
+        phone: phone.text.trim(),
+        email: email.text.trim(),
+        firm: firm.text.trim(),
+      ),
+    );
+  }
 }
 
 class Status extends StatelessWidget {
