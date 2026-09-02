@@ -20,6 +20,16 @@ void main() {
     expect(find.text('Nuevo cliente'), findsOneWidget);
   });
 
+  testWidgets('abre el detalle de declaraciones pendientes', (tester) async {
+    await tester.pumpWidget(_testApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Declaraciones pendientes'));
+    await tester.pumpAndSettle();
+    expect(find.text('3 obligaciones requieren seguimiento'), findsOneWidget);
+    expect(find.text('María Gómez'), findsOneWidget);
+    expect(find.text('Carlos Rodríguez'), findsOneWidget);
+  });
+
   test('serializa y recupera todos los datos de un cliente', () {
     final original = Client(
       'Ana Pérez',

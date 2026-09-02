@@ -392,6 +392,7 @@ class Dashboard extends StatelessWidget {
                 '$pending',
                 'Declaraciones pendientes',
                 Colors.deepOrange,
+                onTap: () => showPendingDeclarations(context, clients, refresh),
               ),
             ),
             const SizedBox(width: 12),
@@ -401,6 +402,7 @@ class Dashboard extends StatelessWidget {
                 money(debt),
                 'Saldo por cobrar',
                 Colors.blue,
+                onTap: () => showOutstandingBalances(context, clients, refresh),
               ),
             ),
           ],
@@ -577,31 +579,196 @@ class ChartBar extends StatelessWidget {
 }
 
 class Metric extends StatelessWidget {
-  const Metric(this.icon, this.value, this.label, this.color, {super.key});
+  const Metric(
+    this.icon,
+    this.value,
+    this.label,
+    this.color, {
+    super.key,
+    this.onTap,
+  });
   final IconData icon;
   final String value, label;
   final Color color;
+  final VoidCallback? onTap;
   @override
   Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          CircleAvatar(
-            backgroundColor: color.withValues(alpha: .12),
-            foregroundColor: color,
-            child: Icon(icon),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            value,
-            style: Theme.of(context).textTheme.titleLarge
-                ?.copyWith(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 4),
-          Text(label, style: const TextStyle(color: Colors.black54)),
-        ],
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                CircleAvatar(
+                  backgroundColor: color.withValues(alpha: .12),
+                  foregroundColor: color,
+                  child: Icon(icon),
+                ),
+                if (onTap != null)
+                  const Icon(Icons.chevron_right, color: Colors.black38),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Text(
+              value,
+              style: Theme.of(context).textTheme.titleLarge
+                  ?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+            Text(label, style: const TextStyle(color: Colors.black54)),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+Future<void> showPendingDeclarations(
+  BuildContext context,
+  List<Client> clients,
+  VoidCallback refresh,
+) {
+  final pending = clients.where((c) => c.status != TaxStatus.filed).toList()
+    ..sort((a, b) => a.due.compareTo(b.due));
+  return showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (sheetContext) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const CircleAvatar(child: Icon(Icons.event_note)),
+              title: const Text(
+                'Declaraciones pendientes',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              subtitle: Text(
+                '${pending.length} obligaciones requieren seguimiento',
+              ),
+            ),
+            const Divider(),
+            if (pending.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(28),
+                child: Text('No hay declaraciones pendientes.'),
+              ),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 360),
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: pending.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (_, index) {
+                  final client = pending[index];
+                  return ListTile(
+                    leading: CircleAvatar(child: Text('${client.due.day}')),
+                    title: Text(
+                      client.name,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      'Vence ${date(client.due)} · ${client.docs} documentos',
+                    ),
+                    trailing: Status(client.status),
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      details(context, client, refresh);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+Future<void> showOutstandingBalances(
+  BuildContext context,
+  List<Client> clients,
+  VoidCallback refresh,
+) {
+  final debtors = clients.where((c) => !c.paid).toList()
+    ..sort((a, b) => b.fee.compareTo(a.fee));
+  final total = debtors.fold<double>(0, (sum, client) => sum + client.fee);
+  return showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (sheetContext) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const CircleAvatar(
+                child: Icon(Icons.account_balance_wallet_outlined),
+              ),
+              title: const Text(
+                'Saldos por cobrar',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              subtitle: Text('${debtors.length} clientes con pago pendiente'),
+              trailing: Text(
+                money(total),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: brand,
+                ),
+              ),
+            ),
+            const Divider(),
+            if (debtors.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(28),
+                child: Text('No existen saldos pendientes.'),
+              ),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 360),
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: debtors.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (_, index) {
+                  final client = debtors[index];
+                  return ListTile(
+                    leading: CircleAvatar(child: Text(client.name[0])),
+                    title: Text(
+                      client.name,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text('Vence ${date(client.due)}'),
+                    trailing: Text(
+                      money(client.fee),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.deepOrange,
+                      ),
+                    ),
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      details(context, client, refresh);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     ),
   );
