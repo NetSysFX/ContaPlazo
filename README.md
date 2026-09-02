@@ -14,6 +14,8 @@ Aplicación móvil multiplataforma para apoyar a contadores en la gestión de cl
 - Persistencia local SQLite para clientes, vencimientos, estados y pagos.
 - Perfil profesional persistente del contador.
 - Dashboard visual de declaraciones, recaudo y cartera.
+- Edición persistente de fechas de vencimiento y honorarios.
+- Identidad visual e íconos propios de ContaPlazo para Android e iOS.
 
 ## Tecnologías
 

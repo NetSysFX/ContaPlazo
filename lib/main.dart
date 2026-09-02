@@ -48,8 +48,8 @@ class Client {
     this.status,
   );
   final String name, nit;
-  final DateTime due;
-  final double fee;
+  DateTime due;
+  double fee;
   bool paid;
   int docs;
   TaxStatus status;
@@ -291,9 +291,19 @@ class _HomeShellState extends State<HomeShell> {
         foregroundColor: Colors.white,
         title: const Row(
           children: [
-            Icon(Icons.account_balance_wallet_outlined),
+            ClipRRect(
+              borderRadius: BorderRadius.all(Radius.circular(8)),
+              child: Image(
+                image: AssetImage('assets/branding/contaplazo_icon.png'),
+                width: 34,
+                height: 34,
+              ),
+            ),
             SizedBox(width: 10),
-            Text('ContaPlazo', style: TextStyle(fontWeight: FontWeight.bold)),
+            Text(
+              'ContaPlazo',
+              style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: .4),
+            ),
           ],
         ),
         actions: [
@@ -914,150 +924,215 @@ class Status extends StatelessWidget {
   }
 }
 
-Future<void> details(
-  BuildContext context,
-  Client c,
-  VoidCallback refresh,
-) => showModalBottomSheet<void>(
-  context: context,
-  showDragHandle: true,
-  isScrollControlled: true,
-  builder: (context) => StatefulBuilder(
-    builder: (context, update) => Padding(
-      padding: const EdgeInsets.fromLTRB(22, 0, 22, 28),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            c.name,
-            style: Theme.of(context).textTheme.titleLarge
-                ?.copyWith(fontWeight: FontWeight.bold),
-          ),
-          Text(
-            'NIT/CC ${c.nit}',
-            style: const TextStyle(color: Colors.black54),
-          ),
-          const SizedBox(height: 12),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.event),
-            title: const Text('Fecha de presentación'),
-            subtitle: Text(date(c.due)),
-          ),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.folder_outlined),
-            title: const Text('Documentos registrados'),
-            subtitle: Text('${c.docs} archivos'),
-            trailing: IconButton(
-              tooltip: 'Agregar documento',
-              onPressed: () async {
-                final document = await pickAndStoreDocument(c);
-                if (document != null) {
-                  update(() {
-                    c.files.add(document);
-                    c.docs = c.files.length;
-                  });
-                  refresh();
-                }
-              },
-              icon: const Icon(Icons.add_circle_outline),
-            ),
-          ),
-          if (c.files.isEmpty)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF1F6F4),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Text(
-                'Agrega certificados, extractos, RUT, facturas o archivos PDF.',
-                style: TextStyle(color: Colors.black54),
-              ),
-            ),
-          ...c.files.map(
-            (document) => ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: CircleAvatar(
-                backgroundColor: const Color(0xFFE7F2EE),
-                child: Icon(documentIcon(document.name), color: brand),
-              ),
-              title: Text(
-                document.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              subtitle: Text(fileSize(document.size)),
-              onTap: () => OpenFilex.open(document.path),
-              trailing: PopupMenuButton<String>(
-                onSelected: (value) async {
-                  if (value == 'open') {
-                    await OpenFilex.open(document.path);
-                  } else if (value == 'delete') {
-                    final confirmed = await confirmDelete(
-                      context,
-                      document.name,
+Future<void> details(BuildContext context, Client c, VoidCallback refresh) =>
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) => Padding(
+          padding: const EdgeInsets.fromLTRB(22, 0, 22, 28),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  c.name,
+                  style: Theme.of(context).textTheme.titleLarge
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  'NIT/CC ${c.nit}',
+                  style: const TextStyle(color: Colors.black54),
+                ),
+                const SizedBox(height: 12),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.event),
+                  title: const Text('Fecha de presentación'),
+                  subtitle: Text(date(c.due)),
+                  trailing: const Icon(Icons.edit_calendar_outlined),
+                  onTap: () async {
+                    final selected = await showDatePicker(
+                      context: context,
+                      initialDate: c.due,
+                      firstDate: DateTime(2024),
+                      lastDate: DateTime(2035),
+                      helpText: 'Seleccionar vencimiento',
                     );
-                    if (confirmed && await deleteStoredDocument(document)) {
-                      update(() {
-                        c.files.remove(document);
-                        c.docs = c.files.length;
-                      });
+                    if (selected != null) {
+                      update(() => c.due = selected);
                       refresh();
                     }
-                  }
-                },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'open', child: Text('Abrir')),
-                  PopupMenuItem(value: 'delete', child: Text('Eliminar')),
-                ],
-              ),
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.folder_outlined),
+                  title: const Text('Documentos registrados'),
+                  subtitle: Text('${c.docs} archivos'),
+                  trailing: IconButton(
+                    tooltip: 'Agregar documento',
+                    onPressed: () async {
+                      final document = await pickAndStoreDocument(c);
+                      if (document != null) {
+                        update(() {
+                          c.files.add(document);
+                          c.docs = c.files.length;
+                        });
+                        refresh();
+                      }
+                    },
+                    icon: const Icon(Icons.add_circle_outline),
+                  ),
+                ),
+                if (c.files.isEmpty)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F6F4),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text(
+                      'Agrega certificados, extractos, RUT, facturas o archivos PDF.',
+                      style: TextStyle(color: Colors.black54),
+                    ),
+                  ),
+                ...c.files.map(
+                  (document) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(
+                      backgroundColor: const Color(0xFFE7F2EE),
+                      child: Icon(documentIcon(document.name), color: brand),
+                    ),
+                    title: Text(
+                      document.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(fileSize(document.size)),
+                    onTap: () => OpenFilex.open(document.path),
+                    trailing: PopupMenuButton<String>(
+                      onSelected: (value) async {
+                        if (value == 'open') {
+                          await OpenFilex.open(document.path);
+                        } else if (value == 'delete') {
+                          final confirmed = await confirmDelete(
+                            context,
+                            document.name,
+                          );
+                          if (confirmed &&
+                              await deleteStoredDocument(document)) {
+                            update(() {
+                              c.files.remove(document);
+                              c.docs = c.files.length;
+                            });
+                            refresh();
+                          }
+                        }
+                      },
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(value: 'open', child: Text('Abrir')),
+                        PopupMenuItem(value: 'delete', child: Text('Eliminar')),
+                      ],
+                    ),
+                  ),
+                ),
+                DropdownButtonFormField<TaxStatus>(
+                  initialValue: c.status,
+                  decoration: const InputDecoration(
+                    labelText: 'Estado de la declaración',
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: TaxStatus.pending,
+                      child: Text('Pendiente'),
+                    ),
+                    DropdownMenuItem(
+                      value: TaxStatus.progress,
+                      child: Text('En proceso'),
+                    ),
+                    DropdownMenuItem(
+                      value: TaxStatus.filed,
+                      child: Text('Presentada'),
+                    ),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) {
+                      update(() => c.status = v);
+                      refresh();
+                    }
+                  },
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.request_quote_outlined),
+                  title: const Text('Honorarios del contador'),
+                  subtitle: Text(money(c.fee)),
+                  trailing: const Icon(Icons.edit_outlined),
+                  onTap: () async {
+                    final amount = await editFee(context, c.fee);
+                    if (amount != null) {
+                      update(() => c.fee = amount);
+                      refresh();
+                    }
+                  },
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: c.paid,
+                  title: const Text('Servicio pagado'),
+                  subtitle: Text(money(c.fee)),
+                  onChanged: (v) {
+                    update(() => c.paid = v);
+                    refresh();
+                  },
+                ),
+              ],
             ),
           ),
-          DropdownButtonFormField<TaxStatus>(
-            initialValue: c.status,
-            decoration: const InputDecoration(
-              labelText: 'Estado de la declaración',
-            ),
-            items: const [
-              DropdownMenuItem(
-                value: TaxStatus.pending,
-                child: Text('Pendiente'),
-              ),
-              DropdownMenuItem(
-                value: TaxStatus.progress,
-                child: Text('En proceso'),
-              ),
-              DropdownMenuItem(
-                value: TaxStatus.filed,
-                child: Text('Presentada'),
-              ),
-            ],
-            onChanged: (v) {
-              if (v != null) {
-                update(() => c.status = v);
-                refresh();
-              }
-            },
-          ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            value: c.paid,
-            title: const Text('Servicio pagado'),
-            subtitle: Text(money(c.fee)),
-            onChanged: (v) {
-              update(() => c.paid = v);
-              refresh();
-            },
-          ),
-        ],
+        ),
       ),
+    );
+
+Future<double?> editFee(BuildContext context, double current) async {
+  final controller = TextEditingController(
+    text: current == 0 ? '' : current.toStringAsFixed(0),
+  );
+  final accepted = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Editar honorarios'),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        decoration: const InputDecoration(
+          labelText: 'Valor del servicio',
+          prefixText: '\$ ',
+          helperText: 'Ingresa el valor en pesos colombianos',
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Guardar'),
+        ),
+      ],
     ),
-  ),
-);
+  );
+  if (accepted != true) return null;
+  final normalized = controller.text.replaceAll('.', '').replaceAll(',', '.');
+  final amount = double.tryParse(normalized);
+  return amount != null && amount >= 0 ? amount : null;
+}
 
 Future<Directory> clientDirectory(Client client) async {
   final root = await getApplicationDocumentsDirectory();
