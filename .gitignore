@@ -51,4 +51,6 @@ app.*.map.json
 /qa_contaplazo/
 /build_contaplazo_doc.py
 /Documentacion_Proyecto_ContaPlazo.docx
+/supabase_config.json
+/tmp/
 /Taller DAM1_*.pdf

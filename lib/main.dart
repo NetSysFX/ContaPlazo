@@ -7,9 +7,14 @@ import 'package:flutter/services.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'data/cloud_repository.dart';
 import 'data/local_database.dart';
 
-void main() => runApp(const ContaPlazoApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await CloudRepository.instance.initialize();
+  runApp(const ContaPlazoApp());
+}
 
 const brand = Color(0xFF075E54);
 
@@ -256,12 +261,16 @@ class _HomeShellState extends State<HomeShell> {
     await marker.writeAsString('seeded', flush: true);
   }
 
-  Future<void> _saveClients() =>
-      store.saveClients(clients.map((client) => client.toMap()).toList());
+  Future<void> _saveClients() async {
+    final maps = clients.map((client) => client.toMap()).toList();
+    await store.saveClients(maps);
+    await CloudRepository.instance.syncClients(maps);
+  }
 
   Future<void> _saveAccountant(AccountantProfile profile) async {
     accountant = profile;
     await store.saveAccountant(profile.toMap());
+    await CloudRepository.instance.syncAccountant(profile.toMap());
     if (mounted) setState(() {});
   }
 
@@ -1209,6 +1218,11 @@ Future<void> details(
                       c.files.add(document);
                       c.docs = c.files.length;
                     });
+                    await CloudRepository.instance.uploadDocument(
+                      clientId: c.nit,
+                      name: document.name,
+                      localPath: document.path,
+                    );
                     refresh();
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -1277,6 +1291,10 @@ Future<void> details(
                           document.name,
                         );
                         if (confirmed && await deleteStoredDocument(document)) {
+                          await CloudRepository.instance.deleteDocument(
+                            clientId: c.nit,
+                            name: document.name,
+                          );
                           update(() {
                             c.files.remove(document);
                             c.docs = c.files.length;

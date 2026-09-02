@@ -1,0 +1,9 @@
+flowchart LR
+    U[Contador] --> A[App Flutter\nAndroid / iOS]
+    A --> L[(SQLite\nmodo offline)]
+    A --> F[Archivos privados\ndel dispositivo]
+    A --> AUTH[Supabase Auth]
+    AUTH --> DB[(PostgreSQL\nclientes y perfil)]
+    AUTH --> ST[(Storage privado\ndocumentos)]
+    RLS[RLS por auth.uid] -. protege .-> DB
+    RLS -. protege .-> ST
